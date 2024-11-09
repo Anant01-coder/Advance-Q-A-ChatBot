@@ -1,62 +1,62 @@
 # Advance-Q-A-ChatBot
-Advance Q/A ChatBot, using Langchain, Groq API, Streamlit
+import streamlit as st
+import os
+from langchain_groq import ChatGroq
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains import create_retrieval_chain
+from langchain_community.vectorstores import FAISS
+import time
 
-This code is a Streamlit application that demonstrates the usage of the LangChain library for building a question-answering system using the Groq language model. Here's a breakdown of the code:
+from dotenv import load_dotenv
+load_dotenv()
 
-Imports: The necessary libraries and modules are imported, including Streamlit for the web interface, LangChain components for document loading, text processing, embeddings, and the FAISS vector store.
-Environment Variables: The dotenv package is used to load environment variables, specifically the Groq API key needed to access the Groq model.
-Session State Initialization: The code checks if a session state variable named "vector" exists. If not, it initializes several components:
-OllamaEmbeddings: This is used for generating embeddings from the text.
-WebBaseLoader: This loads documents from a specified URL, in this case, the LangChain documentation.
-RecursiveCharacterTextSplitter: This splits the loaded documents into smaller chunks for processing.
-FAISS: This creates a vector store from the document embeddings for efficient retrieval.
-Streamlit Interface: The title of the app is set to "ChatGroq Demo".
-A ChatGroq instance is created using the loaded API key and a specified model name ("mixtral-8x7b-32768").
-A prompt template is defined to structure the questions and context for the model.
+## load the Groq API key
+groq_api_key=os.environ['GROQ_API_KEY']
 
-Retrieval Chain:
-A document chain is created to process the input and generate responses based on the retrieved documents.
-A retriever is created from the FAISS vector store, which will be used to find relevant documents based on user queries.
+if "vector" not in st.session_state:
+    st.session_state.embeddings=OllamaEmbeddings()
+    st.session_state.loader=WebBaseLoader("https://docs.smith.langchain.com/")
+    st.session_state.docs=st.session_state.loader.load()
 
-User Input:
-A text input field is provided for users to enter their questions.
-When a question is submitted, the application measures the time taken to generate a response using the retrieval chain and displays the answer.
-Document Similarity Search:
+    st.session_state.text_splitter=RecursiveCharacterTextSplitter(chunk_size=1000,chunk_overlap=200)
+    st.session_state.final_documents=st.session_state.text_splitter.split_documents(st.session_state.docs[:50])
+    st.session_state.vectors=FAISS.from_documents(st.session_state.final_documents,st.session_state.embeddings)
 
-An expander is included in the interface that shows the relevant documents that were used to generate the answer. Each document's content is displayed along with a separator for clarity.
-Overall, this code creates an interactive web application that allows users to ask questions based on the content loaded from a specified URL, leveraging a language model for processing and answering those questions. :User Can you provide an example of how to use this code?
+st.title("ChatGroq Demo")
+llm=ChatGroq(groq_api_key=groq_api_key,
+             model_name="mixtral-8x7b-32768")
 
-You: To use this Streamlit application, follow these steps:
+prompt=ChatPromptTemplate.from_template(
+"""
+Answer the questions based on the provided context only.
+Please provide the most accurate response based on the question
+<context>
+{context}
+<context>
+Questions:{input}
 
-Set Up Environment:
-Ensure you have Python installed on your machine.
-Install the required libraries by running:
-bash
-Insert Code
-Edit
-Copy code
-pip install streamlit langchain python-dotenv faiss-cpu
-Create a .env File:
+"""
+)
+document_chain = create_stuff_documents_chain(llm, prompt)
+retriever = st.session_state.vectors.as_retriever()
+retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-In the same directory as your code, create a .env file and add your Groq API key:
-Insert Code
-Edit
-Copy code
-GROQ_API_KEY=your_api_key_here
-Run the Application:
+prompt=st.text_input("Input you prompt here")
 
-Save the provided code in a Python file, for example, app.py.
-Open your terminal, navigate to the directory containing app.py, and run:
-bash
-Copy code:-
-streamlit run app.py
+if prompt:
+    start=time.process_time()
+    response=retrieval_chain.invoke({"input":prompt})
+    print("Response time :",time.process_time()-start)
+    st.write(response['answer'])
 
-Interact with the App:
-Once the application is running, it will open in your web browser.
-You will see the title "ChatGroq Demo" and a text input field.
-Enter your question related to the LangChain documentation or any other content you have loaded.
-After submitting your question, the app will process it and display the answer along with the relevant documents used for generating the response.
-Explore Document Similarity:
-
-You can expand the section that shows the relevant documents to see which parts of the content were used to formulate the answer.
-This example demonstrates how to set up and use the Streamlit application to interact with the Groq language model for question answering.
+    # With a streamlit expander
+    with st.expander("Document Similarity Search"):
+        # Find the relevant chunks
+        for i, doc in enumerate(response["context"]):
+            st.write(doc.page_content)
+            st.write("--------------------------------")
+    
